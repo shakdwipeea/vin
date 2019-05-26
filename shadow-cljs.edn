@@ -1,0 +1,20 @@
+;; shadow-cljs configuration
+{:nrepl {:port 55001}
+ :http {:port 9071
+        :host "0.0.0.0"}
+ :dev-http {8000 "resources/public"}
+ :deps true
+ :builds {:app {:target :browser
+                :output-dir "resources/public/js"
+                :asset-path "/js"
+                :dev {:compiler-options {:optimizations :none}}
+                :main shakdwipeea.vin.app/main
+                :devtools   {:after-load   shakdwipeea.vin.app/main
+                             :preloads     [devtools.preload]}
+                :modules
+                {:app
+                 {:entries [shakdwipeea.vin.app]}}}
+          :test {:target :node-test
+                 :output-to "target/node-test.js"
+                 :ns-regexp "-test$"
+                 :autorun true}}}
