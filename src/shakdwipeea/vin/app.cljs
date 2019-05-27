@@ -1,5 +1,6 @@
 (ns shakdwipeea.vin.app
-  (:require ["three" :as t]))
+  (:require ["three" :as t]
+            [clojure.core.async :as a]))
 
 ;; js interop
 
@@ -50,6 +51,16 @@
                (create-basic-material 0x00234c)))
 
 
+;; load models
+;; (defn load-gltf-model [model]
+;;   (.setDecoderPath t/DRACOLoader "/draco")
+;;   (.getDecoderModule t/DRACOLoader)
+;;   (doto (t/GLTFLoader.)
+;;     (.setDRACOLoader t/DRACOLoader)
+;;     (.load loader
+;;            model
+;;            )))
+
 ;; camera
 
 (defn create-camera [] (t/PerspectiveCamera. 70
@@ -62,8 +73,11 @@
 (def game-state (atom {}))
 (def renderer (create-renderer))
 
-(defn add-event-listener [event fn]  
-  (.addEventListener js/document event fn false))
+(defn add-event-listener [event event-chan]
+  (.addEventListener js/document event (fn [event]
+                                         (println (.-keyCode event))
+                                         (a/go (a/>! event-chan
+                                                     event))) false))
 
 (defn keycode->direction [event]
   (case (.-keyCode event)
@@ -80,25 +94,41 @@
 ;;   (add-event-listener 'keydown
 ;;                       )
 ;;   )
-(defn render []
-  (.requestAnimationFrame js/window render)
-  (.render renderer
-           (clj->js (:scene  @game-state))
-           (clj->js (:camera @game-state))))
+
+(defn calculate-fps [game-state]
+  (* (/ (:frame game-state)
+        (- (.getTime (js/Date.))
+           (.getTime
+            (:start-time game-state))))
+     1000))
+
+
+(defn game-loop [game-state chans]
+  (a/go (loop [g game-state]
+          (let [[v _] (a/alts! chans)]
+            (println v)
+            (.render renderer
+                     (:scene  game-state)
+                     (:camera game-state))
+            (recur g)))))
 
 
 (defn render-canvas [renderer dom-id]
   (let [canvas (.getElementById js/document dom-id)
-        camera (create-camera)]
+        camera (create-camera)
+        keydown-chan (a/chan 20 (map keycode->direction))
+        frame-chan (a/chan 20)]
     (if (.hasChildNodes canvas)
       (.replaceChild canvas
                      (.-domElement renderer)
                      (aget (.-childNodes canvas) 0))
       (.appendChild canvas (.-domElement renderer)))
     (aset camera "position" "z" 1)
-    (reset! game-state {:camera camera
-                        :scene (create-scene (list (create-cube 0.2 0.2 0.2)))})
-    (render)))
+    (add-event-listener "keyup" keydown-chan)
+    (game-loop {:camera camera
+                :start-time (js/Date.)
+                :scene (create-scene (list (create-cube 0.2 0.2 0.2)))}
+               [keydown-chan])))
 
 (defn main []
   (println "Well.. Hello there!!!!")
