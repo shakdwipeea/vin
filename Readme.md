@@ -7,5 +7,5 @@ Install `clj`
 ## Running
 
 ```shell
-clj -m user
+clj -A:dev -m user
 ```
