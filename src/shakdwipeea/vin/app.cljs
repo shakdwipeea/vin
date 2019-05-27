@@ -62,9 +62,24 @@
 (def game-state (atom {}))
 (def renderer (create-renderer))
 
-(defn add-event-listener [event fn]
+(defn add-event-listener [event fn]  
   (.addEventListener js/document event fn false))
 
+(defn keycode->direction [event]
+  (case (.-keyCode event)
+    ;; up w
+    (38 87) :forward
+    ;; left a
+    (37 65) :left
+    ;; down s
+    (40 83) :back
+    ;; right d
+    (39 68) :right))
+
+;; (defn register-keys!
+;;   (add-event-listener 'keydown
+;;                       )
+;;   )
 (defn render []
   (.requestAnimationFrame js/window render)
   (.render renderer

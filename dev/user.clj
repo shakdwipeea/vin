@@ -3,7 +3,8 @@
             [nrepl.server :as nrepl]
             [shadow.cljs.devtools.server :as server]
             [shadow.cljs.devtools.api :as shadow]
-            [snow.env :as env]))
+            [snow.env :as env]
+            [dynadoc.core :as doc]))
 
 (s/check-asserts true)
 
@@ -47,6 +48,8 @@
   ;; (repl/start! system-config)
   (start-nrepl)
   (println "nrepl started")
+  (doc/start {:port 50000})
+  (println "docs at port 50000")
   (server/start!)
   (shadow/dev :app))
 
