@@ -1,6 +1,9 @@
 (ns shakdwipeea.vin.app
   (:require ["three" :as t]
-            [clojure.core.async :as a]))
+            ["three/examples/jsm/controls/OrbitControls" :as orbit]
+            ["./draco_loader" :as d]
+            ["three-gltf-loader" :as gltf]
+            [clojure.core.async :as a :refer [go >! <!]]))
 
 ;; js interop
 
@@ -11,9 +14,9 @@
 
 ;; scene
 
-(defn create-scene [objs]
+(defn create-scene [scenes]
   (let [scene (t/Scene.)]
-    (doall (map #(.add scene %) objs))
+    (doall (map #(.add scene %) scenes))
     scene))
 
 ;; renderer
@@ -50,16 +53,25 @@
   (create-mesh (create-box w h d)
                (create-basic-material 0x00234c)))
 
+(defn create-sphere [r w h] (t/SphereBufferGeometry. r w h))
+
+(defn cb->chan
+  ([] (cb->chan (a/chan 1)))
+  ([ch] (fn [val] (a/go (a/>! ch val)))))
+
 
 ;; load models
-;; (defn load-gltf-model [model]
-;;   (.setDecoderPath t/DRACOLoader "/draco")
-;;   (.getDecoderModule t/DRACOLoader)
-;;   (doto (t/GLTFLoader.)
-;;     (.setDRACOLoader t/DRACOLoader)
-;;     (.load loader
-;;            model
-;;            )))
+(defn load-gltf-model
+  "returns a channel which will have the loaded model"
+  [model]
+  (let [ch (a/chan 1)
+        loader (gltf.)]
+    (.setDecoderPath t/DRACOLoader "/draco/")
+    (.getDecoderModule t/DRACOLoader)
+    (doto loader
+      (.setDRACOLoader (t/DRACOLoader.))
+      (.load model (cb->chan ch)))
+    ch))
 
 ;; camera
 
@@ -88,7 +100,8 @@
     ;; down s
     (40 83) :back
     ;; right d
-    (39 68) :right))
+    (39 68) :right)
+  :i-dont-know)
 
 ;; (defn register-keys!
 ;;   (add-event-listener 'keydown
@@ -102,33 +115,85 @@
             (:start-time game-state))))
      1000))
 
+(defn load-texture [url]
+  (.load (t/TextureLoader.) url))
+
+(defn add-scene-in-state [game-state scene]
+  (update game-state :scene conj scene))
 
 (defn game-loop [game-state chans]
   (a/go (loop [g game-state]
-          (let [[v _] (a/alts! chans)]
-            (println v)
+          (let [[v _] (a/alts! chans)
+                g1  (cond-> g
+                      (= (v :type) :mesh)
+                      (add-scene-in-state (v :mesh)))]
+            
             (.render renderer
-                     (:scene  game-state)
-                     (:camera game-state))
-            (recur g)))))
+                     (create-scene (:scene g1))
+                     (:camera g1))
+            (recur g1)))))
+
+(defn add-scene
+  "puts scene in scene chan"
+  [scene-chan scene]
+  (a/go (a/>! scene-chan scene)))
+
+(defn frame-loop [frame-chan]
+  (.requestAnimationFrame js/window (fn []
+                                      (go (>! frame-chan
+                                              {:type :frame}))
+                                      (frame-loop frame-chan))))
 
 
 (defn render-canvas [renderer dom-id]
   (let [canvas (.getElementById js/document dom-id)
         camera (create-camera)
         keydown-chan (a/chan 20 (map keycode->direction))
-        frame-chan (a/chan 20)]
+        frame-chan (a/chan 20)
+        scene-chan (a/chan 10)]
     (if (.hasChildNodes canvas)
       (.replaceChild canvas
                      (.-domElement renderer)
                      (aget (.-childNodes canvas) 0))
       (.appendChild canvas (.-domElement renderer)))
-    (aset camera "position" "z" 1)
-    (add-event-listener "keyup" keydown-chan)
+    (println camera)
+    (aset camera "position" "z" 3)
+    (doto (orbit/OrbitControls. camera)
+      #(.set (.-target %) '(0 -0.2 -0.2))
+      .update)
+    ;; (add-event-listener "keyup" keydown-chan)
+
+    (go  (>! scene-chan
+             {:type :mesh
+              :mesh (let [l (t/PointLight. 0xffffff 2 50)]
+                      (.add l
+                            (create-mesh (create-sphere 0.5 1 1)
+                                         (create-basic-material 0xff0040)))
+                      (.set (.-position l) 4 4 4)
+                      l)}))
+
+    ;; (go (>! scene-chan {:type :scene
+    ;;                     :scene (t/AmbientLight. 0xcccccc 0.4)}))
+
+    ;; (go (>! scene-chan {:type :mesh
+    ;;                     :mesh (create-cube 0.2 0.2 0.2)}))
+    (def t (load-texture "texture.jpg"))
+    (a/pipeline 1
+                scene-chan
+                (map (fn [m]
+                       ;; (.traverse (.-scene m)
+                       ;;            (fn [child]
+                       ;;              (when (.-isMesh child)
+                       ;;                (aset child "material" "envmap"
+                       ;;                      t))))
+                       ;; (aset (.-scene m) "background" t)
+                       {:type :mesh
+                        :mesh (-> m .-scene)}))
+                (load-gltf-model "glTF/Duck.gltf"))
     (game-loop {:camera camera
-                :start-time (js/Date.)
-                :scene (create-scene (list (create-cube 0.2 0.2 0.2)))}
-               [keydown-chan])))
+                :start-time (js/Date.)}
+               [frame-chan scene-chan])
+    (frame-loop frame-chan)))
 
 (defn main []
   (println "Well.. Hello there!!!!")
