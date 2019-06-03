@@ -1,4 +1,4 @@
-{:paths ["dev" "resources" "src"]
+{:paths ["resources" "src"]
  :deps {org.clojure/clojure {:mvn/version "RELEASE"}
         metosin/ring-http-response {:mvn/version "0.9.0"} 
         hiccup {:mvn/version "1.0.5"}
@@ -10,13 +10,15 @@
              "jitpack" {:url "https://jitpack.io"}} 
  :aliases
  {:test {:extra-paths ["test"]
-         :extra-deps {org.clojure/test.check {:mvn/version "RELEASE"}}}
+         :extra-deps {olical/cljs-test-runner {:mvn/version "3.5.0"}}
+         :main-opts ["-m" "cljs-test-runner.main"]}
   :dev {:extra-deps {thheller/shadow-cljs {:mvn/version "2.8.36"}
                      binaryage/devtools {:mvn/version "0.9.10"}
                      expound {:mvn/version "0.7.1"}
                      dynadoc {:mvn/version "1.6.5"}
                      nrepl {:mvn/version "0.6.0"}
-                     cider/cider-nrepl {:mvn/version "0.21.1"}}}
+                     cider/cider-nrepl {:mvn/version "0.21.1"}}
+        :extra-paths ["dev" "test"]}
   :runner
   {:extra-deps {com.cognitect/test-runner
                 {:git/url "https://github.com/cognitect-labs/test-runner"

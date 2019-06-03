@@ -15,6 +15,6 @@
                 {:app
                  {:entries [shakdwipeea.vin.app]}}}
           :test {:target :node-test
-                 :output-to "target/node-test.js"
+                 :output-to "target/node-tests.js"
                  :ns-regexp "-test$"
                  :autorun true}}}

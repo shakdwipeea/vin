@@ -11,5 +11,11 @@
   "dependencies": {
     "three": "^0.104.0",
     "three-gltf-loader": "^1.104.0"
+  },
+  "devDependencies": {
+    "karma": "^2.0.0",
+    "karma-chrome-launcher": "^2.2.0",
+    "karma-cljs-test": "^0.1.0",
+    "source-map-support": "^0.5.12"
   }
 }
