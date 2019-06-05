@@ -39,6 +39,7 @@
 (defn width [] (.-innerWidth js/window))
 (defn height [] (.-innerHeight js/window))
 
+(defn aspect [] (/ (width) (height)))
 
 (defn keycode->direction [event]
   (case (.-keyCode event)
@@ -57,6 +58,10 @@
 ;;   (aset scene "background" background-color))
 (defn create-scene [] (t/Scene.))
 
+(defn set-position [obj [x y z]]
+  (.set (.-position obj) x y z)
+  obj)
+
 ;; renderer
 
 (defn create-renderer []
@@ -71,27 +76,25 @@
   (t/AmbientLight. color intensity))
 
 
-(defn create-point-light [{[x y z] :position
-                           :keys [color intensity distance]
+(defn create-point-light [{:keys [color intensity distance position]
                            :or {distance 100}
                            :as p}]
-  (println x y z)
-  (let [light (t/PointLight. color intensity distance 2)]
-    (.set (.-position light) x y z)
-    light))
+  (-> (t/PointLight. color intensity distance 2)
+      (set-position  position)))
 
 
 (defn create-directional-light [{[x y z] :position
                                  :keys [position color intensity]}]
-  (let [light (t/DirectionalLight. color intensity)]
-    (.set (.-position light) x y z)
-    light))
+  (-> (t/DirectionalLight. color intensity)
+      (set-position  position)))
 
 
 ;; materials
 
-(defn create-basic-material [color]
-  (t/MeshBasicMaterial. #js {:color color}))
+(defn create-basic-material [{:keys [color side]
+                              :or {side t/FrontSide}}]
+  (t/MeshBasicMaterial. #js {:color color
+                             :side side}))
 
 
 (defn create-normal-material []
@@ -122,6 +125,8 @@
   (t/BoxGeometry. width height depth))
 
 
+(defn create-vector3 [[x y z]] (t/Vector3. x y z))
+
 ;; mesh shapes
 
 (defmulti map->mesh #(-> % ::object))
@@ -137,7 +142,7 @@
 
 (defn create-cube [{:keys [width height depth] :as params}]
   (create-mesh {:geometry (create-box params)
-                :material (create-basic-material 0x00234c)}))
+                :material (create-basic-material {:color 0x00234c})}))
 
 
 (defn create-sphere-geometry [{:keys [radius width height]}]
@@ -153,6 +158,21 @@
     (aset "castShadow" true)))
 
 (defmethod map->mesh ::bulb [m] (create-bulb m))
+
+
+(defn create-plane-geometry [{:keys [width height width-segments
+                                     height-segments]
+                              :or {width-segments 1
+                                   height-segments 1}}]
+  (t/PlaneBufferGeometry. width height width-segments height-segments))
+
+
+(defn create-plane [m]
+  (create-mesh {:geometry (create-plane-geometry m)
+                :material (create-basic-material (merge m
+                                                        {:side t/DoubleSide}))}))
+
+(defmethod map->mesh ::plane [m] (create-plane m))
 
 
 ;; load models
@@ -173,13 +193,16 @@
 
 ;; camera
 
-(defn create-camera [] (t/PerspectiveCamera. 70
-                                             (/ (width) (height))
-                                             0.01
-                                             1000))
+(defn create-camera [{:keys [fov aspect near far position look-at]}]
+  (let [camera (t/PerspectiveCamera. fov aspect near far)]
+    (set-position camera position)
+    (.lookAt camera (create-vector3 look-at))
+    camera))
 
 (defn add-light-to-camera! [camera light]
   (.add camera light))
+
+(defmethod map->mesh ::perspective-camera [m] (create-camera m))
 
 ;; three js
 
@@ -262,55 +285,36 @@
       (.appendChild canvas (.-domElement renderer)))
     renderer))
 
-;; (doto scene-chan
-
-;;   (add-scene! (create-bulb {:radius    1
-;;                             :width     32
-;;                             :height    32
-;;                             :position  [0 2 0]
-;;                             :color     0xffffee
-;;                             :intensity 100}))
-
-;;   (add-scene! (t/HemisphereLight. 0xffffbb 0x080820 1))
-
-;;   (add-scene! (create-mesh (create-box {:width 3
-;;                                         :height 1
-;;                                         :depth 2})
-;;                            (create-mesh-phong-material {})
-;;                            {:position [0 -1 0]})))
-
-;; (a/pipeline 1
-;;             scene-chan
-;;             (map (fn [m]
-;;                    {:type :mesh
-;;                     :mesh (-> m .-scene)}))
-;;             (load-gltf-model "elendil.glb"))
 
 (defn mesh->map [mesh]
   {:type :mesh
    :mesh mesh})
 
-
+(defn transform-mesh [mesh {:keys [rotation-x]}]
+  (aset mesh "rotation" "x"
+        (+ (.. mesh -rotation -x)
+           rotation-x))
+  mesh)
 
 (defn draw-scenes+ [renderer scene]
-  (a/merge (doall (map #(-> %
-                            map->mesh
-                            (to-channel+ mesh->map))
+  (a/merge (doall (map (fn [m]
+                         (-> m
+                             map->mesh
+                             (transform-mesh m)
+                             (to-channel+ mesh->map)))
                        scene))))
 
 
-(defn render-scene [renderer scene]
-  (let [camera (create-camera)
-        keydown-chan (a/chan 20 (map keycode->direction))
+(defn render-scene [renderer {:keys [camera objects]}]
+  (let [keydown-chan (a/chan 20 (map keycode->direction))
         frame-chan (a/chan 20)
         scene-chan (a/chan 10)]
-    (aset camera "position" "z" 30)
     (game-loop {:renderer renderer
-                :camera camera
+                :camera (map->mesh camera)
                 :scene (t/Scene.)}
                [scene-chan frame-chan])
     (frame-loop frame-chan)
-    (a/pipe (draw-scenes+ renderer scene) scene-chan)))
+    (a/pipe (draw-scenes+ renderer objects) scene-chan)))
 
 
 (defn draw [canvas-dom-id scene]
