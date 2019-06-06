@@ -54,9 +54,11 @@
   :i-dont-know)
 
 
-;; (when (some? background-color)
-;;   (aset scene "background" background-color))
-(defn create-scene [] (t/Scene.))
+
+(defn create-scene []
+  (doto (t/Scene.)
+    ;; (aset "background" (t/Color. "skyblue"))
+    ))
 
 (defn set-position [obj [x y z]]
   (.set (.-position obj) x y z)
@@ -91,10 +93,18 @@
 
 ;; materials
 
+(defn color->js [color]
+  (t/Color. (cond->  color
+              (keyword? color) name)))
+
+(defn map->js [m]
+  (clj->js (update m :color color->js)))
+
+
 (defn create-basic-material [{:keys [color side]
-                              :or {side t/FrontSide}}]
-  (t/MeshBasicMaterial. #js {:color color
-                             :side side}))
+                              :or {side t/FrontSide}
+                              :as p}]
+  (t/MeshBasicMaterial. (map->js p)))
 
 
 (defn create-normal-material []
@@ -105,7 +115,8 @@
                                    :or {color 0xffffee
                                         dithering true}
                                    :as opts}]
-  (t/MeshPhongMaterial. (clj->js opts)))
+  (println "[hong material]" opts)
+  (t/MeshPhongMaterial. (map->js opts)))
 
 
 (defn create-standard-material
@@ -121,8 +132,9 @@
 
 ;; geometery primitives
 
-(defn create-box [{:keys [width height depth]}]
-  (t/BoxGeometry. width height depth))
+(defn create-box [{:keys [width height depth] :as o}]
+  (println o)
+  (t/CubeGeometry. width height depth))
 
 
 (defn create-vector3 [[x y z]] (t/Vector3. x y z))
@@ -134,16 +146,19 @@
 (defn create-mesh [{:keys [geometry material  position]}]
   (let [m (t/Mesh. geometry material)]
     (when-let [[x y z] position]
-      (-> m
-          .-position
-          (.set x y z)))
+      (do (println "setting position " position)
+          (-> m
+              .-position
+              (.set x y z))))
     m))
 
 
-(defn create-cube [{:keys [width height depth] :as params}]
+(defn create-cube [{:keys [width height depth position] :as params}]
   (create-mesh {:geometry (create-box params)
-                :material (create-basic-material {:color 0x00234c})}))
+                :material (create-basic-material params)
+                :position position}))
 
+(defmethod map->mesh ::cube [m] (create-cube m))
 
 (defn create-sphere-geometry [{:keys [radius width height]}]
   (t/SphereGeometry. radius width height))
@@ -164,13 +179,14 @@
                                      height-segments]
                               :or {width-segments 1
                                    height-segments 1}}]
-  (t/PlaneBufferGeometry. width height width-segments height-segments))
+  (t/PlaneGeometry. width height width-segments height-segments))
 
 
-(defn create-plane [m]
-  (create-mesh {:geometry (create-plane-geometry m)
-                :material (create-basic-material (merge m
-                                                        {:side t/DoubleSide}))}))
+(defn create-plane [{:keys [color] :as m}]
+  (let [mesh (create-mesh {:geometry (create-plane-geometry m)
+                           :material (create-basic-material (merge m
+                                                                   {:side t/DoubleSide}))})]
+    mesh))
 
 (defmethod map->mesh ::plane [m] (create-plane m))
 
@@ -291,9 +307,10 @@
    :mesh mesh})
 
 (defn transform-mesh [mesh {:keys [rotation-x]}]
-  (aset mesh "rotation" "x"
-        (+ (.. mesh -rotation -x)
-           rotation-x))
+  (when (some? rotation-x)
+    (aset mesh "rotation" "x"
+          (+ (.. mesh -rotation -x)
+             rotation-x)))
   mesh)
 
 (defn draw-scenes+ [renderer scene]
@@ -311,7 +328,7 @@
         scene-chan (a/chan 10)]
     (game-loop {:renderer renderer
                 :camera (map->mesh camera)
-                :scene (t/Scene.)}
+                :scene (create-scene)}
                [scene-chan frame-chan])
     (frame-loop frame-chan)
     (a/pipe (draw-scenes+ renderer objects) scene-chan)))
