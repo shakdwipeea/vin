@@ -1,16 +1,20 @@
 (ns shakdwipeea.vin.app
   (:require [shakdwipeea.vin.three :as t]
-            [clojure.core.async :as a :refer [go >! <!]]))
+            [shakdwipeea.vin.camera :as c]
+            [clojure.core.async :as a :refer [go >! <!]]
+            [ghostwheel.core :as g
+             :refer [>defn >defn- >fdef => | <- ?]]
+            [ghostwheel.tracer]))
 
 (def π Math/PI)
 
 (def camera {::t/object ::t/perspective-camera
-             :fov       90
-             :aspect    (t/aspect)
-             :near      0.1
-             :far       1000
-             :position  [0 1.8 10]
-             :look-at   [0  0  0]})
+             ::c/fov       90
+             ::c/aspect    (t/aspect)
+             ::c/near      0.1
+             ::c/far       1000
+             ::c/position  [0 1.8 10]
+             ::c/look-at   [0  0  0]})
 
 (def bulb {::t/object ::t/bulb
            :radius    1

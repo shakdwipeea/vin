@@ -5,6 +5,8 @@
         stylefy {:mvn/version "1.7.0"}
         org.clojure/clojurescript {:mvn/version "RELEASE"}
         org.clojure/core.async {:mvn/version "0.4.490"}
+        gnl/ghostwheel {:mvn/version "0.3.9"}
+        gnl/ghostwheel.tracer {:mvn/version "0.3.9"}
         snow {:local/root "../snow"}}
  :mvn/repos {"jboss" {:url "https://repository.jboss.org/nexus/content/groups/public/"}
              "jitpack" {:url "https://jitpack.io"}} 

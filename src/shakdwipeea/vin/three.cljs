@@ -2,8 +2,12 @@
   (:require ["three" :as t]
             ["three-gltf-loader" :as gltf]
             ["./draco_loader" :as d]
+            ["three/examples/jsm/controls/FirstPersonControls" :as fp]
             [clojure.core.reducers :as r]
-            [clojure.core.async :as a :refer [go >! <!]]))
+            [clojure.core.async :as a :refer [go >! <! chan]]
+            [shakdwipeea.vin.camera :as c]
+            [shakdwipeea.vin.math :refer [add-vector3]]
+            [shakdwipeea.vin.helpers :refer [set-position!]]))
 
 ;; core async helpers
 
@@ -41,33 +45,16 @@
 
 (defn aspect [] (/ (width) (height)))
 
-(defn keycode->direction [event]
-  (case (.-keyCode event)
-    ;; up w
-    (38 87) :forward
-    ;; left a
-    (37 65) :left
-    ;; down s
-    (40 83) :back
-    ;; right d
-    (39 68) :right)
-  :i-dont-know)
-
-
 
 (defn create-scene []
   (doto (t/Scene.)
     ;; (aset "background" (t/Color. "skyblue"))
     ))
 
-(defn set-position [obj [x y z]]
-  (.set (.-position obj) x y z)
-  obj)
-
 ;; renderer
 
 (defn create-renderer []
-  (doto (t/WebGLRenderer.)
+  (doto (t/WebGLRenderer. #js {:anitalias true})
     (.setPixelRatio (.-devicePixelRatio js/window))
     (.setSize (width) (height))
     (aset "toneMapping" t/ReinhardToneMapping)))
@@ -82,13 +69,13 @@
                            :or {distance 100}
                            :as p}]
   (-> (t/PointLight. color intensity distance 2)
-      (set-position  position)))
+      (set-position!  position)))
 
 
 (defn create-directional-light [{[x y z] :position
                                  :keys [position color intensity]}]
   (-> (t/DirectionalLight. color intensity)
-      (set-position  position)))
+      (set-position!  position)))
 
 
 ;; materials
@@ -137,7 +124,7 @@
   (t/CubeGeometry. width height depth))
 
 
-(defn create-vector3 [[x y z]] (t/Vector3. x y z))
+
 
 ;; mesh shapes
 
@@ -209,29 +196,34 @@
 
 ;; camera
 
-(defn create-camera [{:keys [fov aspect near far position look-at]}]
-  (let [camera (t/PerspectiveCamera. fov aspect near far)]
-    (set-position camera position)
-    (.lookAt camera (create-vector3 look-at))
-    camera))
+(defn setup-fps-controls
+  ([camera] (setup-fps-controls camera {:look-speed 0.4
+                                        :movement-speed 10
+                                        :no-fly false
+                                        :look-vetical true
+                                        :constrain-vertical true
+                                        :vertical-min 1.0
+                                        :vertical-max 2.0
+                                        :lon -170
+                                        :lat 100}))
+  ([camera {:keys [look-speed movement-speed no-fly look-vertical
+                   constrain-vertical vertical-min vertical-max lon
+                   lat]}]
+   (doto (fp/FirstPersonControls. camera)
+     (aset "lookSpeed" look-speed)
+     (aset "movementSpeed" movement-speed)
+     (aset "noFly" no-fly)
+     (aset "lookVertical" look-vertical)
+     (aset "constrainVertical" constrain-vertical)
+     (aset "verticalMin" vertical-min)
+     (aset "verticalMax" vertical-max)
+     (aset "lon" lon)
+     (aset "lat" lat))))
 
 (defn add-light-to-camera! [camera light]
   (.add camera light))
 
-(defmethod map->mesh ::perspective-camera [m] (create-camera m))
-
 ;; three js
-
-(def game-state (atom {}))
-
-(defn add-event-listener [event event-chan]
-  (.addEventListener js/document
-                     event
-                     (fn [event]
-                       (println (.-keyCode event))
-                       (a/go (a/>! event-chan
-                                   event)))
-                     false))
 
 
 (defn add-scene-in-state [game-state scene]
@@ -241,15 +233,19 @@
                               s)))
 
 
-(defn perform-render! [{:keys [scene camera renderer] :as game-state}]
+(defn perform-render! [{:keys [::c/position ::c/camera
+                               scene renderer clock controls]
+                        :as game-state}]
+  (set-position! camera position)
   (.render renderer scene camera))
 
 
 (defn get-next-frame
   [current-game {type :type :as update-map}]
   (cond-> current-game
-    (= type :mesh)  (add-scene-in-state (update-map :mesh))
-    (= type :frame) (assoc :render? true))) 
+    (= type :mesh)   (add-scene-in-state (update-map :mesh))
+    (= type :frame)  (assoc :render? true)
+    (= type :camera) (c/update-camera update-map))) 
 
 
 (defn game-state-transducer [game-step-fn initial-state]
@@ -279,7 +275,6 @@
   (let [game-frame-chan (get-next-frame+ initial-game-state chans)]
     (go (loop []
           (let [{:keys [render?] :as o} (<! game-frame-chan)]
-            
             (when render?
               (perform-render! o)))
           (recur)))))
@@ -323,13 +318,15 @@
 
 
 (defn render-scene [renderer {:keys [camera objects]}]
-  (let [keydown-chan (a/chan 20 (map keycode->direction))
-        frame-chan (a/chan 20)
-        scene-chan (a/chan 10)]
-    (game-loop {:renderer renderer
-                :camera (map->mesh camera)
-                :scene (create-scene)}
-               [scene-chan frame-chan])
+  (let [frame-chan  (a/chan 20)
+        scene-chan  (a/chan 10)
+        camera-chan (c/add-camera+)]
+    (game-loop
+     (merge {:renderer renderer
+             :clock (t/Clock.)
+             :scene (create-scene)}
+            (c/make-camera! camera))
+     [scene-chan frame-chan camera-chan])
     (frame-loop frame-chan)
     (a/pipe (draw-scenes+ renderer objects) scene-chan)))
 

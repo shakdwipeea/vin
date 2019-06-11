@@ -9,7 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "three": "^0.104.0",
+    "three": "^0.105.2",
     "three-gltf-loader": "^1.104.0"
   },
   "devDependencies": {
