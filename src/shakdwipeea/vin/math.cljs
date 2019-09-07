@@ -5,8 +5,6 @@
             [ghostwheel.core :as g
              :refer [>defn >defn- >fdef => | <- ?]]))
 
-
-
 (s/def ::vector (s/coll-of int? :count 3))
 
 (>defn add-vector3

@@ -1,5 +1,6 @@
 (ns shakdwipeea.vin.camera
   (:require ["three" :as t]
+            ["three/examples/jsm/controls/PointerLockControls" :as p]
             [clojure.core.async :as a :refer [go <! >!]]
             [shakdwipeea.vin.helpers :as helpers]
             [shakdwipeea.vin.math :as m]
@@ -14,7 +15,8 @@
      (.addEventListener js/document
                         (name event)
                         (fn [ev]
-                          (a/go (a/>! cb-chan ev)))
+                          (when-not (nil? ev)
+                            (a/go (a/>! cb-chan ev))))
                         false)
      cb-chan)))
 
@@ -30,8 +32,6 @@
       ;; right d
       (39 68) :right
       :unknown-key)))
-
-(def keycode-xf (map keycode->direction))
 
 (def velocity 2)
 
@@ -53,39 +53,74 @@
 (defn update-camera
   "consumes the side effect described in m and returns the updated
    game state"
-  [{:keys [camera clock position] :as game-state} m]
+  [{:keys [camera clock position mouse-controls] :as game-state} m]
+  ;; (aset (.getObject mouse-controls)
+  ;;       "position"
+  ;;       "y"
+  ;;       (+ (.. (.getObject mouse-controls) -position -y)
+  ;;          (* (.getDelta clock) )))
   (update game-state
           ::position
           (translate (.getDelta clock) m)))
 
 
-(defn describe-move!
-  "puts a map of type camera in the camera-ch channel where move-start
+(defn describe-move
+  "returns a map of type camera where move-start
    and move-stop refer to the direction in which to start or stop.
    Provide direction keyword in start and stop"
-  [camera-ch {:keys [start stop]}]
-  (go (>! camera-ch
-          (cond->   {:type :camera}
-            (some? start) (merge {:move-start start})
-            (some? stop)  (merge {:move-stop  stop})))))
+  [{:keys [start stop]}]
+  (cond->   {:type :camera}
+    (some? start) (merge {:move-start start})
+    (some? stop)  (merge {:move-stop  stop})))
+
+(defn keyboard-xf
+  "returns a transducer whose behaviour is to
+   convert the incoming keycode to a direction
+   and then to a map which as returned by decribe-move
+   in the key defined by k
+   "
+  [k]
+  (comp (map keycode->direction)
+        (map #(describe-move {k %}))))
+
+
+(defn id->dom [id] (.getElementById js/document id))
+
+
+;; todo horrible fn
+(defn patch-pointer-lock!
+  "cross browser support for pointer lock functions
+   equivalent js is
+   ///
+   canvas.requestPointerLock = canvas.requestPointerLock ||
+   canvas.mozRequestPointerLock;
+  
+   document.exitPointerLock = document.exitPointerLock ||
+   document.mozExitPointerLock;
+  "
+  [dom-id]
+  (let [element (id->dom dom-id)]
+    (aset element
+          "requestPointerLock"
+          (or (.-requestPointerLock element)
+              (.-mozRequestPointerLock element)))
+    (aset js/document
+          "exitPointerlock"
+          (or (.-exitPointerLock js/document)
+              (.-mozExitPointerLock js/document)))))
 
 
 (defn add-camera+
   "returns a channel where updates required to affect camera will
    be provided"
-  []
-  (let [camera-chan (a/chan 10)
-        keydown-chan (add-event-listener+ :keydown keycode-xf)
-        keyup-chan (add-event-listener+ :keyup keycode-xf)]
-    (a/go (loop []
-            (a/alt! keydown-chan ([direction]
-                                  (describe-move! camera-chan
-                                                  {:start direction}))
-                    keyup-chan  ([direction]
-                                 (describe-move! camera-chan
-                                                 {:stop direction})))
-            (recur)))
-    camera-chan))
+  [{c ::controls} canvas-dom-id]
+  (let [keydown-chan (add-event-listener+ :keydown (keyboard-xf :start))
+        keyup-chan (add-event-listener+ :keyup (keyboard-xf :stop))
+        _          (add-event-listener+ :click (map (fn [e]
+                                                      (.lock c)
+                                                      :a)))]
+    (helpers/create-mixer+ [keyup-chan keydown-chan])))
+
 
 (s/def ::camera #(instance? t/PerspectiveCamera %))
 (s/def ::position ::m/vector)
@@ -95,8 +130,8 @@
 (s/def ::far number?)
 (s/def ::near number?)
 
-(s/def ::camera-props (s/keys :req [::position ::look-at
-                                    ::fov    ::aspect   ::far
+(s/def ::camera-props (s/keys :req [::position ::look-at ::fov
+                                    ::aspect   ::far
                                     ::near]))
 
 
@@ -104,13 +139,13 @@
 
 (defn create-vector3 [[x y z]] (t/Vector3. x y z))
 
-(>defn make-camera!
-       "create a new camera"
-       [{:keys [::fov ::aspect ::near ::far ::position ::look-at]}]
-       [::camera-props | #(< near far)
-        => ::camera-map]
-       (let [camera (t/PerspectiveCamera. fov aspect near far)]
-         (helpers/set-position! camera position)
-         (.lookAt camera (create-vector3 look-at))
-         {::camera   camera
-          ::position position}))
+(defn make-camera!
+  "create a new camera"
+  [canvas-dom-id 
+   {:keys [::fov ::aspect ::near ::far ::position ::look-at]}]
+  (let [camera (t/PerspectiveCamera. fov aspect near far)]
+    (helpers/set-position! camera position)
+    (.lookAt camera (create-vector3 look-at))
+    {::camera   camera
+     ::controls (p/PointerLockControls. camera)
+     ::position position}))

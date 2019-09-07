@@ -4,8 +4,7 @@
             [shadow.cljs.devtools.server :as server]
             [shadow.cljs.devtools.api :as shadow]
             [snow.env :as env]
-            [dynadoc.core :as doc]
-            ))
+            [dynadoc.core :as doc]))
 
 (s/check-asserts true)
 

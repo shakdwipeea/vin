@@ -1,5 +1,6 @@
 (ns shakdwipeea.vin.three
   (:require ["three" :as t]
+            ["camera-controls" :default CameraControls]
             ["three-gltf-loader" :as gltf]
             ["./draco_loader" :as d]
             ["three/examples/jsm/controls/FirstPersonControls" :as fp]
@@ -7,7 +8,7 @@
             [clojure.core.async :as a :refer [go >! <! chan]]
             [shakdwipeea.vin.camera :as c]
             [shakdwipeea.vin.math :refer [add-vector3]]
-            [shakdwipeea.vin.helpers :refer [set-position!]]))
+            [shakdwipeea.vin.helpers :as h]))
 
 ;; core async helpers
 
@@ -69,13 +70,13 @@
                            :or {distance 100}
                            :as p}]
   (-> (t/PointLight. color intensity distance 2)
-      (set-position!  position)))
+      (h/set-position!  position)))
 
 
 (defn create-directional-light [{[x y z] :position
                                  :keys [position color intensity]}]
   (-> (t/DirectionalLight. color intensity)
-      (set-position!  position)))
+      (h/set-position!  position)))
 
 
 ;; materials
@@ -194,6 +195,8 @@
 
 (defmethod map->mesh ::gltf-model [m] (load-gltf-model+ m))
 
+
+
 ;; camera
 
 (defn setup-fps-controls
@@ -209,7 +212,7 @@
   ([camera {:keys [look-speed movement-speed no-fly look-vertical
                    constrain-vertical vertical-min vertical-max lon
                    lat]}]
-   (doto (fp/FirstPersonControls. camera)
+   (doto (fp/FirstPersonControls. camera) 
      (aset "lookSpeed" look-speed)
      (aset "movementSpeed" movement-speed)
      (aset "noFly" no-fly)
@@ -234,16 +237,16 @@
 
 
 (defn perform-render! [{:keys [::c/position ::c/camera
-                               scene renderer clock controls]
+                               scene renderer clock]
                         :as game-state}]
-  (set-position! camera position)
+  (h/set-position! camera position)
   (.render renderer scene camera))
 
 
 (defn get-next-frame
   [current-game {type :type :as update-map}]
   (cond-> current-game
-    (= type :mesh)   (add-scene-in-state (update-map :mesh))
+    (= type :mesh)   (add-scene-in-state (:mesh update-map))
     (= type :frame)  (assoc :render? true)
     (= type :camera) (c/update-camera update-map))) 
 
@@ -264,11 +267,9 @@
    and returns a channel which will contain updated game state
    whenever we get a value in any of the chans"
   [game-state chans]
-  (let [game-chan (a/chan 1 (game-state-transducer get-next-frame
-                                                   game-state))
-        game-mixer (a/mix game-chan)]
-    (doseq [ch chans] (a/admix game-mixer ch))
-    game-chan))
+  (->> game-state
+       (game-state-transducer get-next-frame)
+       (h/create-mixer+ chans)))
 
 
 (defn game-loop [initial-game-state chans]
@@ -317,24 +318,27 @@
                        scene))))
 
 
-(defn render-scene [renderer {:keys [camera objects]}]
+(defn render-scene [renderer canvas-dom-id  {:keys [camera objects]}]
   (let [frame-chan  (a/chan 20)
         scene-chan  (a/chan 10)
-        camera-chan (c/add-camera+)]
+        camera (c/make-camera! canvas-dom-id camera)
+        camera-chan (c/add-camera+ camera canvas-dom-id)]
     (game-loop
      (merge {:renderer renderer
              :clock (t/Clock.)
              :scene (create-scene)}
-            (c/make-camera! camera))
+            camera)
      [scene-chan frame-chan camera-chan])
     (frame-loop frame-chan)
+    (a/go (a/>! scene-chan
+                (.getObject (::c/controls camera))))
     (a/pipe (draw-scenes+ renderer objects) scene-chan)))
 
 
 (defn draw [canvas-dom-id scene]
   (-> (create-renderer)
       (replace-canvas canvas-dom-id)
-      (render-scene scene)))
+      (render-scene canvas-dom-id scene)))
 
 
 ;; (render-canvas renderer "canvas")
