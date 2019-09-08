@@ -1,6 +1,5 @@
 (ns shakdwipeea.vin.three
   (:require ["three" :as t]
-            ["camera-controls" :default CameraControls]
             ["three-gltf-loader" :as gltf]
             ["./draco_loader" :as d]
             ["three/examples/jsm/controls/FirstPersonControls" :as fp]
@@ -239,7 +238,7 @@
 (defn perform-render! [{:keys [::c/position ::c/camera
                                scene renderer clock]
                         :as game-state}]
-  (h/set-position! camera position)
+  ;; (h/set-position! camera position)
   (.render renderer scene camera))
 
 
@@ -248,7 +247,7 @@
   (cond-> current-game
     (= type :mesh)   (add-scene-in-state (:mesh update-map))
     (= type :frame)  (assoc :render? true)
-    (= type :camera) (c/update-camera update-map))) 
+    (.-isLocked (::c/controls current-game)) (c/update-camera update-map))) 
 
 
 (defn game-state-transducer [game-step-fn initial-state]
@@ -276,8 +275,8 @@
   (let [game-frame-chan (get-next-frame+ initial-game-state chans)]
     (go (loop []
           (let [{:keys [render?] :as o} (<! game-frame-chan)]
-            (when render?
-              (perform-render! o)))
+            ;; (when render?)
+            (perform-render! o))
           (recur)))))
 
 

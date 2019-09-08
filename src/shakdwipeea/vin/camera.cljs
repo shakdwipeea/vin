@@ -1,12 +1,14 @@
 (ns shakdwipeea.vin.camera
   (:require ["three" :as t]
-            ["three/examples/jsm/controls/PointerLockControls" :as p]
+            ["./PointerLockControls" :as p]
             [clojure.core.async :as a :refer [go <! >!]]
             [shakdwipeea.vin.helpers :as helpers]
             [shakdwipeea.vin.math :as m]
             [clojure.spec.alpha :as s]
             [ghostwheel.core :as g
              :refer [>defn >defn- >fdef => | <- ?]]))
+
+
 
 (defn add-event-listener+
   ([event] (add-event-listener+ event identity))
@@ -31,37 +33,79 @@
       (40 83) :back
       ;; right d
       (39 68) :right
-      :unknown-key)))
+      nil)))
 
 (def velocity 2)
 
-(defn move-position [pos move-start δt]
-  (let [δ (* velocity δt)]
-    (case move-start
-      :forward (m/move-z - δ pos) 
-      :right   (m/move-x + δ pos)
-      :left    (m/move-x - δ pos)
-      :back    (m/move-z + δ pos)
-      pos)))
+(defn calculate-velocity [])
 
-(defn translate [δt {:keys [move-start move-stop]}]
-  (fn [pos]
-    (cond-> pos
-      (some? move-start) (move-position move-start δt))))
+
+(defn mark-start-position [pos move-start δt]
+  (into {}
+        (map (fn [[direction val]]
+                  (if (= direction move-start)
+                    [direction 1]
+                    [direction val]))  pos)))
+
+(defn mark-stop-position [pos move-stop δt]
+  (into {}
+        (map (fn [[direction val]]
+                  (if (= direction move-stop)
+                    [direction 0]
+                    [direction val]))  pos)))
+
+(defn translate [δt {:keys [move-start move-stop]} pos]
+  (cond-> pos
+    (some? move-start) (mark-start-position move-start δt)
+    (some? move-stop) (mark-stop-position move-stop δt)))
 
 
 (defn update-camera
   "consumes the side effect described in m and returns the updated
    game state"
-  [{:keys [camera clock position mouse-controls] :as game-state} m]
-  ;; (aset (.getObject mouse-controls)
-  ;;       "position"
-  ;;       "y"
-  ;;       (+ (.. (.getObject mouse-controls) -position -y)
-  ;;          (* (.getDelta clock) )))
-  (update game-state
-          ::position
-          (translate (.getDelta clock) m)))
+  [{:keys [::camera clock ::velocity ::controls]
+    {:keys [forward left back right] :as movement} ::movement
+    time ::time
+    :as game-state}
+   m]
+  (let [t1 (.now js/performance)
+        
+        δ (.getDelta clock)
+
+        direction (doto (t/Vector3.)
+                    (aset "z" (- forward back))
+                    (aset "x" (- right left))
+                    .normalize)
+
+        velocity1 (doto (t/Vector3.)
+                    (aset "x" (cond-> (- (.-x velocity) (* 10.0 (.-x velocity) δ))
+                                (or (= left 1) (= right 1)) (- (* (.-x direction) 400 δ))))
+                    (aset "y" (- (.-y velocity) (* 9.8 100 δ)))
+
+                    (aset "z" (cond-> (- (.-z velocity) (* 10.0 (.-z velocity) δ))
+                                (or (= forward 1) (= back 1)) (- (* (.-z direction) 400 δ)))))
+        ]
+    
+    (.moveRight controls (* δ (- (.-x velocity1))))
+
+    (.moveForward controls (* δ (- (.-z velocity1))))
+
+    ;; (aset (.getObject controls)
+    ;;       "position"
+    ;;       "y"
+    ;;       (+ (.. (.getObject controls) -position -y)
+    ;;          (* δ (.-y velocity1))))
+
+    (if (< 10 (.. (.getObject controls) -position -y))
+      (aset (.getObject controls)
+            "position"
+            "y"
+            0))
+
+    (assoc  game-state
+            ::velocity velocity1
+            ::movement (translate δ m movement)
+            ::time  t1)))
 
 
 (defn describe-move
@@ -148,4 +192,8 @@
     (.lookAt camera (create-vector3 look-at))
     {::camera   camera
      ::controls (p/PointerLockControls. camera)
-     ::position position}))
+     ::velocity (t/Vector3.)
+     ::time (.now js/performance)
+     ::movement (into {}
+                      (map (fn [d] [d 0])
+                           #{:forward  :right :left :back}))}))
