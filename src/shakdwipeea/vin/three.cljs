@@ -2,6 +2,7 @@
   (:require ["three" :as t]
             ["three-gltf-loader" :as gltf]
             ["./draco_loader" :as d]
+            ["./TDSLoader" :as tds-loader]
             ["three/examples/jsm/controls/FirstPersonControls" :as fp]
             [clojure.core.reducers :as r]
             [clojure.core.async :as a :refer [go >! <! chan]]
@@ -10,7 +11,6 @@
             [shakdwipeea.vin.helpers :as h]))
 
 ;; core async helpers
-
 (defn chan?
   "is ch a channel"
   [ch]
@@ -195,6 +195,25 @@
 (defmethod map->mesh ::gltf-model [m] (load-gltf-model+ m))
 
 
+(defn load-tds-model+
+  "returns a channel which will have the loaded model"
+  [{res :resource t :textures}]
+  (let [normal-map (.load (t/TextureLoader.) (str t "normal.jpg"))
+        ch (a/chan 1 (map (fn [object]
+                            (.traverse object (fn [child]
+                                                (if (.-isMesh child)
+                                                  (aset child
+                                                        "material"
+                                                        "normalMap"
+                                                        normal-map))))
+                            object)))
+        loader (tds-loader/TDSLoader.)]
+    (println "loading 3ds" res t)
+    (.setResourcePath loader t)
+    (.load loader res (cb->chan+ ch))
+    ch))
+
+(defmethod map->mesh ::tds-model [m] (load-tds-model+ m))
 
 ;; camera
 

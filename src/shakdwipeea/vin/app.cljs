@@ -24,8 +24,12 @@
            :color     :white
            :intensity 100})
 
-(def room {:resource "elendil.glb"
-           ::t/object ::t/gltf-model})
+;; (def room {:resource "elendil.glb"
+;;            ::t/object ::t/gltf-model})
+
+(def room {:resource "max/portalgun.3ds"
+           :textures "max/textures/"
+           ::t/object ::t/tds-model})
 
 (def cube1 {::t/object ::t/cube
             :width 2
@@ -51,7 +55,7 @@
 (def ground {::t/object ::t/plane
              :width  200
              :height 200
-             :color :brown
+             :color :white
              :rotation-x (/ π 2)
              :width-segments 4
              :height-segments 4})
@@ -59,6 +63,6 @@
 (defn main []
   (t/draw "canvas"
           {:camera camera
-           :objects [ground cube1 cube2 cube3]}))
+           :objects [bulb cube1 cube2 cube3 room]}))
 
 (main)
